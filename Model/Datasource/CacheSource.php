@@ -92,14 +92,14 @@ class CacheSource extends DataSource {
 		if ($results === false) {
 			$results = $this->source->read($Model, $queryData, $recursive);
 			// compress before storing
-			if (isset($this->config['gzip'])) {
+			if (isset($this->config['gzip']) && $this->config['gzip']) {
 				Cache::write($key, gzcompress(serialize($results)), $this->config['config']);
 			} else {
 				Cache::write($key, $results, $this->config['config']);
 			}
 		} else {
 			// uncompress data from cache
-			if (isset($this->config['gzip'])) {
+			if (isset($this->config['gzip']) && $this->config['gzip']) {
 				$results = unserialize(gzuncompress($results));
 			}
 		}
@@ -141,7 +141,7 @@ class CacheSource extends DataSource {
 			),
 			(array)$query
 		);
-		$gzip = (isset($this->config['gzip'])) ? '_gz' : '';
+		$gzip = (isset($this->config['gzip']) && $this->config['gzip']) ? '_gz' : '';
 		$queryHash = md5(serialize($query));
 		$sourceName = $this->source->configKeyName;
 		return Inflector::underscore($sourceName).'_'.Inflector::underscore($Model->alias).'_'.$queryHash.$gzip;
