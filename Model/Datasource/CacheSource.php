@@ -97,7 +97,6 @@ class CacheSource extends DataSource {
 			} else {
 				Cache::write($key, $results, $this->config['config']);
 			}
-			$this->_map($Model, $key);
 		} else {
 			// uncompress data from cache
 			if (isset($this->config['gzip'])) {
@@ -114,27 +113,17 @@ class CacheSource extends DataSource {
  * @param array $query If null, clears all for this model
  * @param Model $Model The model to clear the cache for
  */
-	public function clearModelCache(Model $Model, $query = null) {
-		$map = Cache::read('map', $this->config['config']);
-
-		$keys = array();
+	public function clearModelCache(Model $Model, $clearGroup = true, $query = null) {
 		if ($query !== null) {
-			$keys = array($this->_key($Model, $query));
-		} else{
-			if (!empty($map[$this->source->configKeyName]) && !empty($map[$this->source->configKeyName][$Model->alias])) {
-				$keys = $map[$this->source->configKeyName][$Model->alias];
-			}
+			Cache::delete($this->_key($Model, $query), $this->config['config']);
+		} else {
+			Cache::clear(false, $this->config['config']);
 		}
-		if (empty($keys)) {
-			return;
+
+		if ($clearGroup) {
+			$config = Cache::config($this->config['config']);
+			Cache::clearGroup(implode("','", $config['settings']['groups']));
 		}
-		$map[$this->source->configKeyName][$Model->alias] = array_flip($map[$this->source->configKeyName][$Model->alias]);
-		foreach ($keys as $cacheKey) {
-			Cache::delete($cacheKey, $this->config['config']);
-			unset($map[$this->source->configKeyName][$Model->alias][$cacheKey]);
-		}
-		$map[$this->source->configKeyName][$Model->alias] = array_values(array_flip($map[$this->source->configKeyName][$Model->alias]));
-		Cache::write('map', $map, $this->config['config']);
 	}
 
 /**
@@ -156,27 +145,6 @@ class CacheSource extends DataSource {
 		$queryHash = md5(serialize($query));
 		$sourceName = $this->source->configKeyName;
 		return Inflector::underscore($sourceName).'_'.Inflector::underscore($Model->alias).'_'.$queryHash.$gzip;
-	}
-
-/**
- * Creates a cache map (used for deleting cache keys or groups)
- *
- * @param Model $Model
- * @param string $key
- */
-	protected function _map(Model $Model, $key) {
-		$map = Cache::read('map', $this->config['config']);
-		if ($map === false) {
-			$map = array();
-		}
-		$map = Set::merge($map, array(
-			$this->source->configKeyName => array(
-				$Model->alias => array(
-					$key
-				)
-			)
-		));
-		Cache::write('map', $map, $this->config['config']);
 	}
 
 /**
