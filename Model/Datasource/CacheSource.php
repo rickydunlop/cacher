@@ -8,10 +8,6 @@
  * @subpackage    cacher.models.behaviors
  */
 
-/**
- * Includes
- */
-App::uses('Folder', 'Utility');
 App::uses('DataSource', 'Model/Datasource');
 
 /**
@@ -47,7 +43,6 @@ class CacheSource extends DataSource {
  * @param array $config Configure options
  */
 	public function __construct($config = array()) {
-		$config = array_merge(array('config' => 'default'), $config);
 		parent::__construct($config);
 
 		if (Configure::read('Cache.disable') === true) {
@@ -88,19 +83,20 @@ class CacheSource extends DataSource {
 	public function read(Model $Model, $queryData = array(), $recursive = null) {
 		$this->_resetSource($Model);
 		$key = $this->_key($Model, $queryData);
+
+		// Chck if cache is available
 		$results = Cache::read($key, $this->config['config']);
 		if ($results === false) {
 			$results = $this->source->read($Model, $queryData, $recursive);
 			// compress before storing
 			if (isset($this->config['gzip']) && $this->config['gzip']) {
-				Cache::write($key, gzcompress(serialize($results)), $this->config['config']);
-			} else {
-				Cache::write($key, $results, $this->config['config']);
+				$results = gzcompress(json_encode($results));
 			}
+			Cache::write($key, $results, $this->config['config']);
 		} else {
 			// uncompress data from cache
 			if (isset($this->config['gzip']) && $this->config['gzip']) {
-				$results = unserialize(gzuncompress($results));
+				$results = json_decode(gzuncompress($results));
 			}
 		}
 		return $results;
@@ -113,16 +109,12 @@ class CacheSource extends DataSource {
  * @param array $query If null, clears all for this model
  * @param Model $Model The model to clear the cache for
  */
-	public function clearModelCache(Model $Model, $clearGroup = true, $query = null) {
-		if ($query !== null) {
-			Cache::delete($this->_key($Model, $query), $this->config['config']);
-		} else {
-			Cache::clear(false, $this->config['config']);
-		}
+	public function clearModelCache(Model $Model) {
+		Cache::clear(false, $this->config['config']);
 
-		if ($clearGroup) {
-			$config = Cache::config($this->config['config']);
-			Cache::clearGroup(implode("','", $config['settings']['groups']));
+		$config = Cache::settings($this->config['config']);
+		if (!empty($config['groups'])) {
+			Cache::clearGroup(implode("','", $config['groups']), $this->config['config']);
 		}
 	}
 
@@ -142,9 +134,9 @@ class CacheSource extends DataSource {
 			(array)$query
 		);
 		$gzip = (isset($this->config['gzip']) && $this->config['gzip']) ? '_gz' : '';
-		$queryHash = md5(serialize($query));
+		$queryHash = md5(json_encode($query));
 		$sourceName = $this->source->configKeyName;
-		return Inflector::underscore($sourceName).'_'.Inflector::underscore($Model->alias).'_'.$queryHash.$gzip;
+		return Inflector::underscore($sourceName) . '_' . Inflector::underscore($Model->alias) . '_' . $queryHash . $gzip;
 	}
 
 /**
