@@ -33,6 +33,14 @@ class CacheBehavior extends ModelBehavior {
  */
 	public $settings;
 
+	public $_defaults = array(
+		'config'        => 'default',
+		'clearOnDelete' => true,
+		'clearOnSave'   => true,
+		'auto'          => false,
+		'gzip'          => false
+	);
+
 /**
  * Sets up a connection using passed settings
  *
@@ -48,66 +56,52 @@ class CacheBehavior extends ModelBehavior {
  * @see Cache::config()
  */
 	public function setup(Model $Model, $config = array()) {
-		$_defaults = array(
-			'config' => 'default',
-			'clearOnDelete' => true,
-			'clearOnSave' => true,
-			'clearGroups' => true,
-			'auto' => false,
-			'gzip' => false
-		);
-		$settings = array_merge($_defaults, $config);
+		$this->settings[$Model->alias] = array_merge($this->_defaults, $config);
 
-		$Model->_useDbConfig = $Model->useDbConfig;
-		$ds = ConnectionManager::getDataSource($Model->useDbConfig);
-		if (!in_array('cacher', ConnectionManager::sourceList())) {
-			$settings += array(
+		if (!in_array($Model->alias . '-cache', ConnectionManager::sourceList())) {
+			$ds = ConnectionManager::getDataSource($Model->useDbConfig);
+			$this->settings[$Model->alias] += array(
 				'original' => $Model->useDbConfig,
 				'datasource' => 'Cacher.CacheSource'
 			);
-			$settings = array_merge($ds->config, $settings);
-			ConnectionManager::create('cacher', $settings);
+			$this->settings[$Model->alias] = array_merge($ds->config, $this->settings[$Model->alias]);
+			ConnectionManager::create($Model->alias . '-cache', $this->settings[$Model->alias]);
 		} else {
-			$ds = ConnectionManager::getDataSource('cacher');
-			$ds->config = array_merge($ds->config, $settings);
+			$ds = ConnectionManager::getDataSource('cache');
+			$ds->config = array_merge($ds->config, $this->settings[$Model->alias]);
 		}
-
-		if (!isset($this->settings[$Model->alias])) {
-			$this->settings[$Model->alias] = $settings;
-		}
-		$this->settings[$Model->alias] = array_merge($this->settings[$Model->alias], $settings);
 	}
 
 /**
  * Intercepts find to use the caching datasource instead
  *
- * If `$queryData['cacher']` is true, it will cache based on the setup settings
- * If `$queryData['cacher']` is a duration, it will cache using the setup settings
+ * If `$query['cache']` is true, it will cache based on the setup settings
+ * If `$query['cache']` is a duration, it will cache using the setup settings
  * and the new duration.
  *
  * @param Model $Model The calling model
- * @param array $queryData The query
+ * @param array $query The query
  */
-	public function beforeFind(Model $Model, $queryData) {
+	public function beforeFind(Model $Model, $query) {
 		if (Configure::read('Cache.disable') === true) {
-			return $queryData;
+			return $query;
 		}
 		$this->cacheResults = false;
-		if (isset($queryData['cacher'])) {
-			if (is_string($queryData['cacher'])) {
-				Cache::config($this->settings[$Model->alias]['config'], array('duration' => $queryData['cacher']));
+		if (isset($query['cache'])) {
+			if (is_string($query['cache'])) {
+				Cache::config($this->settings[$Model->alias]['config'], array('duration' => $query['cache']));
 				$this->cacheResults = true;
 			} else {
-				$this->cacheResults = (boolean)$queryData['cacher'];
+				$this->cacheResults = (boolean)$query['cache'];
 			}
-			unset($queryData['cacher']);
+			unset($query['cache']);
 		}
 		$this->cacheResults = $this->cacheResults || $this->settings[$Model->alias]['auto'];
 
 		if ($this->cacheResults) {
-			$Model->setDataSource('cacher');
+			$Model->setDataSource($Model->alias . '-cache');
 		}
-		return $queryData;
+		return $query;
 	}
 
 /**
@@ -135,49 +129,14 @@ class CacheBehavior extends ModelBehavior {
 	}
 
 /**
- * Clears all of the cache for this model's find queries. Optionally, pass
- * `$queryData` to just clear a specific query
+ * Clears all of the cache for this model's find queries.
  *
  * @param Model $Model The calling model
  * @return boolean
  */
-	public function clearCache(Model $Model, $queryData = null) {
-		if ($queryData !== null) {
-			$queryData = $this->_prepareFind($Model, $queryData);
-		}
-		$ds = ConnectionManager::getDataSource('cacher');
-		$success = $ds->clearModelCache($Model, $this->settings[$Model->alias]['clearGroups'], $queryData);
+	public function clearCache(Model $Model) {
+		$ds = ConnectionManager::getDataSource($Model->alias . '-cache');
+		$success = $ds->clearModelCache($Model);
 		return $success;
-	}
-
-/*
- * Prepares a query by adding missing data. This function is needed because
- * reads on the database typically bypass Model::find() which is where the query
- * is changed.
- *
- * @param array $query The query
- * @return array The modified query
- * @see Model::find()
- */
-	protected function _prepareFind(Model $Model, $query = array()) {
-		$query = array_merge(
-			array(
-				'conditions' => null, 'fields' => null, 'joins' => array(), 'limit' => null,
-				'offset' => null, 'order' => null, 'page' => null, 'group' => null, 'callbacks' => true
-			),
-			(array)$query
-		);
-		if (!is_numeric($query['page']) || intval($query['page']) < 1) {
-			$query['page'] = 1;
-		}
-		if ($query['page'] > 1 && !empty($query['limit'])) {
-			$query['offset'] = ($query['page'] - 1) * $query['limit'];
-		}
-		if ($query['order'] === null && $Model->order !== null) {
-			$query['order'] = $Model->order;
-		}
-		$query['order'] = array($query['order']);
-
-		return $query;
 	}
 }
