@@ -67,7 +67,7 @@ class CacheBehavior extends ModelBehavior {
 			$this->settings[$Model->alias] = array_merge($ds->config, $this->settings[$Model->alias]);
 			ConnectionManager::create($Model->alias . '-cache', $this->settings[$Model->alias]);
 		} else {
-			$ds = ConnectionManager::getDataSource('cache');
+			$ds = ConnectionManager::getDataSource($Model->alias . '-cache');
 			$ds->config = array_merge($ds->config, $this->settings[$Model->alias]);
 		}
 	}
